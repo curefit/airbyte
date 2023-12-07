@@ -1,9 +1,14 @@
-Currently self maintained: 
+# Currently Self-Maintained
 
-1. Mongo Source Connector:
-   <p>a. Remove initial snapshot to avoid syncing data from inception. </p>
-   <p>b. Remove Keys with null values for schema validation. </p>
-2. Mysql Source Connector:
-   <p>a. Remove initial snapshot to avoid syncing data from inception.</p>
-3. Normalistaion Code:
-   <p>a. Maintain base noralisation code to control transformation layer.</p>
+## 1. Mongo Source Connector:
+
+- a. Remove initial snapshot to avoid syncing data from inception.
+- b. Remove keys with null values for schema validation.
+
+## 2. MySQL Source Connector:
+
+- a. Remove initial snapshot to avoid syncing data from inception.
+
+## 3. Normalization Code:
+
+- a. Maintain base normalization code to control the transformation layer.
