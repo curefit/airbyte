@@ -307,6 +307,10 @@ public class MySqlSource extends AbstractJdbcSource<MysqlType> implements Source
 
   @Override
   public JsonNode toDatabaseConfig(final JsonNode config) {
+
+    System.out.println("--print database config---");
+    System.out.println(config.get("snapshot_override_file").asText());
+
     final String encodedDatabaseName = HostPortResolver.encodeValue(config.get(JdbcUtils.DATABASE_KEY).asText());
     final StringBuilder jdbcUrl = new StringBuilder(String.format("jdbc:mysql://%s:%s/%s",
         config.get(JdbcUtils.HOST_KEY).asText(),
@@ -524,7 +528,7 @@ public class MySqlSource extends AbstractJdbcSource<MysqlType> implements Source
   }
 
   @Override
-  public JdbcDatabase createDatabase(final JsonNode sourceConfig) throws SQLException {
+        public JdbcDatabase createDatabase(final JsonNode sourceConfig) throws SQLException {
     // return super.createDatabase(sourceConfig, this::getConnectionProperties);
     final JsonNode jdbcConfig = toDatabaseConfig(sourceConfig);
     // Create the data source

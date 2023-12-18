@@ -7,6 +7,11 @@ package io.airbyte.integrations.source.mysql.initialsync;
 import static io.airbyte.cdk.integrations.source.relationaldb.RelationalDbQueryUtils.enquoteIdentifier;
 import static io.airbyte.cdk.integrations.source.relationaldb.RelationalDbQueryUtils.getFullyQualifiedTableNameWithQuoting;
 
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.AbstractIterator;
 import com.mysql.cj.MysqlType;
@@ -16,13 +21,19 @@ import io.airbyte.cdk.integrations.source.relationaldb.RelationalDbQueryUtils;
 import io.airbyte.commons.util.AutoCloseableIterator;
 import io.airbyte.commons.util.AutoCloseableIterators;
 import io.airbyte.integrations.source.mysql.initialsync.MySqlInitialReadUtil.PrimaryKeyInfo;
+import io.airbyte.integrations.source.mysql.MySqlCdcProperties;
 import io.airbyte.integrations.source.mysql.internal.models.PrimaryKeyLoadStatus;
 import io.airbyte.protocol.models.AirbyteStreamNameNamespacePair;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import javax.annotation.CheckForNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -118,6 +129,68 @@ public class MySqlInitialLoadRecordIterator extends AbstractIterator<JsonNode>
     return (currentIterator == null || !currentIterator.hasNext());
   }
 
+  private String extractSnapshotTableName(String inputString) {
+    String patternString = "snapshot\\.select\\.statement\\.overrides\\.(.*?)=";
+    Pattern pattern = Pattern.compile(patternString);
+    Matcher matcher = pattern.matcher(inputString);
+
+    if (matcher.find()) {
+      return matcher.group(1);
+    }
+    return "";
+  }
+
+  private boolean isMatchingTableName(String snapshotTableName, String schemaName, String tableName) {
+    return snapshotTableName != null && snapshotTableName.equals(schemaName + "." + tableName);
+  }
+
+  private String extractSnapshotOverrideFilter(String sqlQuery) {
+    String patternString = "(where\\s*.*)$";
+    Pattern pattern = Pattern.compile(patternString, Pattern.CASE_INSENSITIVE);
+    Matcher matcher = pattern.matcher(sqlQuery);
+
+    if (matcher.find()) {
+      return matcher.group(1).trim();
+    }
+    return "";
+  }
+
+  private String getSnapshotOverrideQueryIfExists(String schemaName, String tableName) {
+
+    String snapShotOverrideFilter = "";
+
+    if(database.getSourceConfig().has("snapshot_override_file")) {
+      final String S3_FILE_PATH = database.getSourceConfig().get("snapshot_override_file").asText();
+
+      try {
+
+        S3Object s3Object = MySqlCdcProperties.getS3Object(S3_FILE_PATH);
+
+        // Read the content of the object
+        S3ObjectInputStream objectInputStream = s3Object.getObjectContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(objectInputStream));
+
+        String line;
+        while ((line = reader.readLine()) != null) {
+          String snapshotTableName = extractSnapshotTableName(line);
+          if (isMatchingTableName(snapshotTableName, schemaName, tableName)) {
+            snapShotOverrideFilter = extractSnapshotOverrideFilter(line);
+            break;
+          }
+        }
+        reader.close();
+        objectInputStream.close();
+
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+      return snapShotOverrideFilter;
+    } else {
+      return snapShotOverrideFilter;
+    }
+
+  }
+
   private PreparedStatement getPkPreparedStatement(final Connection connection) {
     try {
       final String tableName = pair.getName();
@@ -140,8 +213,8 @@ public class MySqlInitialLoadRecordIterator extends AbstractIterator<JsonNode>
           sql = String.format("SELECT %s FROM %s ORDER BY %s", wrappedColumnNames, fullTableName,
               quotedCursorField);
         } else {
-          sql = String.format("SELECT %s FROM %s ORDER BY %s LIMIT %s", wrappedColumnNames, fullTableName,
-              quotedCursorField, chunkSize);
+          sql = String.format("SELECT %s FROM %s %s ORDER BY %s LIMIT %s", wrappedColumnNames, fullTableName,
+                  getSnapshotOverrideQueryIfExists(schemaName, tableName), quotedCursorField, chunkSize);
         }
         final PreparedStatement preparedStatement = connection.prepareStatement(sql);
         LOGGER.info("Executing query for table {}: {}", tableName, preparedStatement);

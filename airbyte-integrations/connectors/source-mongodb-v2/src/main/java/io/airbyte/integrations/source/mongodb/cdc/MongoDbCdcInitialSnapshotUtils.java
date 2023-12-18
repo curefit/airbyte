@@ -76,10 +76,10 @@ public class MongoDbCdcInitialSnapshotUtils {
        * faster than a sync interval, resulting in the stored offset in our state being removed from the
        * oplog.
        */
-      initialSnapshotStreams.addAll(fullCatalog.getStreams()
-          .stream()
-          .filter(SYNC_MODE_FILTER)
-          .toList());
+//      initialSnapshotStreams.addAll(fullCatalog.getStreams()
+//          .stream()
+//          .filter(SYNC_MODE_FILTER)
+//          .toList());
     } else {
       // Find and filter out streams that have completed the initial snapshot
       final Set<AirbyteStreamNameNamespacePair> streamsStillInInitialSnapshot = stateManager.getStreamStates().entrySet().stream()
@@ -90,16 +90,16 @@ public class MongoDbCdcInitialSnapshotUtils {
       LOGGER.debug("There are {} stream(s) that are still in progress of an initial snapshot sync.", streamsStillInInitialSnapshot.size());
 
       // Fetch the streams from the catalog that still need to complete the initial snapshot sync
-      initialSnapshotStreams.addAll(fullCatalog.getStreams().stream()
-          .filter(stream -> streamsStillInInitialSnapshot.contains(AirbyteStreamNameNamespacePair.fromAirbyteStream(stream.getStream())))
-          .map(Jsons::clone)
-          .toList());
+//      initialSnapshotStreams.addAll(fullCatalog.getStreams().stream()
+//          .filter(stream -> streamsStillInInitialSnapshot.contains(AirbyteStreamNameNamespacePair.fromAirbyteStream(stream.getStream())))
+//          .map(Jsons::clone)
+//          .toList());
 
       // Fetch the streams added to the catalog since the last sync
       final List<ConfiguredAirbyteStream> newStreams = identifyStreamsToSnapshot(fullCatalog,
           new HashSet<>(stateManager.getStreamStates().keySet()));
-      LOGGER.debug("There are {} stream(s) that have been added to the catalog since the last sync.", newStreams.size());
-      initialSnapshotStreams.addAll(newStreams);
+//      LOGGER.debug("There are {} stream(s) that have been added to the catalog since the last sync.", newStreams.size());
+//      initialSnapshotStreams.addAll(newStreams);
     }
 
     // Emit estimated trace message for each stream that will perform an initial snapshot sync

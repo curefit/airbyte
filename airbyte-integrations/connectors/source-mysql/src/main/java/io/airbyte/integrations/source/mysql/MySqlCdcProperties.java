@@ -11,6 +11,11 @@ import static io.airbyte.cdk.integrations.source.jdbc.JdbcSSLConnectionUtils.TRU
 import static io.airbyte.cdk.integrations.source.jdbc.JdbcSSLConnectionUtils.TRUST_KEY_STORE_URL;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import io.airbyte.cdk.db.jdbc.JdbcDatabase;
 import io.airbyte.cdk.db.jdbc.JdbcUtils;
 import io.airbyte.cdk.integrations.debezium.internals.mysql.CustomMySQLTinyIntOneToBooleanConverter;
@@ -22,6 +27,11 @@ import java.time.Duration;
 import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.URI;
+import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 public class MySqlCdcProperties {
 
@@ -47,12 +57,79 @@ public class MySqlCdcProperties {
     return props;
   }
 
+  public static S3Object getS3Object(String S3_FILE_PATH) {
+    int bucketEndIndex = S3_FILE_PATH.indexOf("/", 5);
+
+    String bucketName = "";
+    String objectKey = "";
+
+    if (bucketEndIndex != -1) {
+
+      bucketName = S3_FILE_PATH.substring(5, bucketEndIndex);
+      objectKey = S3_FILE_PATH.substring(bucketEndIndex + 1);
+
+      System.out.println("Bucket Name: " + bucketName);
+      System.out.println("Object Key: " + objectKey);
+    } else {
+      System.out.println("Not a valid S3 URI");
+    }
+
+    AmazonS3 s3 = AmazonS3ClientBuilder.standard().withRegion("ap-south-1").build();
+
+    // Specify the bucket name and object key
+    GetObjectRequest getObjectRequest = new GetObjectRequest(bucketName, objectKey);
+
+    // Get the S3 object
+    S3Object s3Object = s3.getObject(getObjectRequest);
+
+    return s3Object;
+
+  }
+
   private static Properties commonProperties(final JdbcDatabase database) {
     final Properties props = new Properties();
     final JsonNode sourceConfig = database.getSourceConfig();
     final JsonNode dbConfig = database.getDatabaseConfig();
     // debezium engine configuration
     props.setProperty("connector.class", "io.debezium.connector.mysql.MySqlConnector");
+
+    /**
+     * Add Snapshot Override statements for Debezium Mysql through file from AWS S3
+     */
+    if(database.getSourceConfig().has("snapshot_override_file")) {
+
+      final String S3_FILE_PATH = sourceConfig.get("snapshot_override_file").asText();
+
+      try {
+
+        S3Object s3Object = getS3Object(S3_FILE_PATH);
+
+        // Read the content of the object
+        S3ObjectInputStream objectInputStream = s3Object.getObjectContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(objectInputStream));
+
+        String line;
+        while ((line = reader.readLine()) != null) {
+          System.out.println(line); // Process each line as needed
+          String[] parts = line.split("=");
+
+          if (parts.length == 2) {
+            String propertyName = parts[0].trim();
+            String propertyValue = parts[1].trim();
+
+            // Set the property in the props object
+            props.setProperty(propertyName, propertyValue);
+          }
+        }
+
+        reader.close();
+        objectInputStream.close();
+
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+
 
     props.setProperty("database.server.id", String.valueOf(generateServerID()));
     // https://debezium.io/documentation/reference/2.2/connectors/mysql.html#mysql-boolean-values

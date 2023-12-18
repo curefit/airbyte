@@ -256,6 +256,7 @@ public class MongoUtil {
         @SuppressWarnings("unchecked")
         final Map<String, String> fields = (Map<String, String>) cursor.next().get("_id");
         discoveredFields.addAll(fields.entrySet().stream()
+                .filter(e -> !"null".equals(e.getValue()))
             .map(e -> new MongoField(e.getKey(), convertToSchemaType(e.getValue())))
             .collect(Collectors.toSet()));
       }
@@ -269,6 +270,7 @@ public class MongoUtil {
       case "boolean" -> JsonSchemaType.BOOLEAN;
       case "int", "long", "double", "decimal" -> JsonSchemaType.NUMBER;
       case "array" -> JsonSchemaType.ARRAY;
+      case "date" -> JsonSchemaType.TIMESTAMP_WITHOUT_TIMEZONE_V1;
       case "object", "javascriptWithScope" -> JsonSchemaType.OBJECT;
       case "null" -> JsonSchemaType.NULL;
       default -> JsonSchemaType.STRING;

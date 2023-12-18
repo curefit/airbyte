@@ -546,7 +546,7 @@ where 1 = 1
                 sql_type = jinja_call("type_timestamp_without_timezone()")
             else:
                 sql_type = jinja_call("type_timestamp_with_timezone()")
-            return f"cast({replace_operation} as {sql_type}) as {column_name}"
+            return f"cast({replace_operation} as {sql_type})  + interval '330 MINUTES' as {column_name}"
         elif is_date(definition):
             if (
                 self.destination_type.value == DestinationType.MYSQL.value
