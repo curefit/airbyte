@@ -14,6 +14,7 @@ import static io.airbyte.integrations.source.mongodb.MongoConstants.DEFAULT_DISC
 import static io.airbyte.integrations.source.mongodb.MongoConstants.DISCOVER_SAMPLE_SIZE_CONFIGURATION_KEY;
 import static io.airbyte.integrations.source.mongodb.MongoConstants.PASSWORD_CONFIGURATION_KEY;
 import static io.airbyte.integrations.source.mongodb.MongoConstants.USERNAME_CONFIGURATION_KEY;
+import static io.airbyte.integrations.source.mongodb.MongoConstants.SNAPSHOT_OVERRIDE_FILE;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.OptionalInt;
@@ -79,6 +80,10 @@ public record MongoDbSourceConfig(JsonNode rawConfig) {
     } else {
       return DEFAULT_DISCOVER_SAMPLE_SIZE;
     }
+  }
+
+  public String getSnapshotOverrideFile() {
+    return rawConfig.has(SNAPSHOT_OVERRIDE_FILE) ? rawConfig.get(SNAPSHOT_OVERRIDE_FILE).asText() : null;
   }
 
 }

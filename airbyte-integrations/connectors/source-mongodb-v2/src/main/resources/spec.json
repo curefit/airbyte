@@ -151,6 +151,13 @@
         "minimum": 1000,
         "maximum": 100000,
         "group": "advanced"
+      },
+      "snapshot_override_file": {
+        "description": "AWS S3 Location of file which contains snapshot override statements.",
+        "title": "Snapshot Override File Location",
+        "type": "string",
+        "group": "advanced",
+        "order": 10
       }
     },
     "groups": [

@@ -63,6 +63,8 @@ dependencies {
     debeziumTestImplementation libs.slf4j.simple
     debeziumTestImplementation libs.kotlinx.cli.jvm
     debeziumTestImplementation libs.spotbugs.annotations
+
+    implementation 'com.amazonaws:aws-java-sdk-s3:1.12.620'
 }
 
 /*

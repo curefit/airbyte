@@ -81,11 +81,13 @@ public class MongoDbCdcInitializer {
                                                                         final ConfiguredAirbyteCatalog catalog,
                                                                         final MongoDbStateManager stateManager,
                                                                         final Instant emittedAt,
-                                                                        final MongoDbSourceConfig config) {
+                                                                        final MongoDbSourceConfig config,
+                                                                        String S3_FILE_PATH) {
 
     final Duration firstRecordWaitTime = FirstRecordWaitTimeUtil.getFirstRecordWaitTime(config.rawConfig());
     final OptionalInt queueSize = MongoUtil.getDebeziumEventQueueSize(config);
-    final String databaseName = config.getDatabaseName();
+    final String databaseName = config.getDatabaseName();;
+    LOGGER.info("S3_FILE_PATH {}...", S3_FILE_PATH);
     final Properties defaultDebeziumProperties = MongoDbCdcProperties.getDebeziumProperties();
     final BsonDocument resumeToken = MongoDbResumeTokenHelper.getMostRecentResumeToken(mongoClient);
     final JsonNode initialDebeziumState =
@@ -111,9 +113,14 @@ public class MongoDbCdcInitializer {
     if (!savedOffsetIsValid) {
       LOGGER.debug("Saved offset is not valid. Airbyte will trigger a full refresh.");
       // If the offset in the state is invalid, reset the state to the initial STATE
-//      stateManager.resetState(new MongoDbCdcState(initialDebeziumState));
+
+      /*
+       * Comment below to start reading from latest
+       */
+
+      stateManager.resetState(new MongoDbCdcState(initialDebeziumState));
     } else {
-      LOGGER.debug("Valid offset state discovered.  Updating state manager with retrieved CDC state {}...", cdcState);
+      LOGGER.info("Valid offset state discovered.  Updating state manager with retrieved CDC state {}...", cdcState);
       stateManager.updateCdcState(new MongoDbCdcState(cdcState));
     }
 
@@ -122,12 +129,17 @@ public class MongoDbCdcInitializer {
             ? new MongoDbCdcState(initialDebeziumState)
             : stateManager.getCdcState();
 
+    LOGGER.info("stateToBeUsed: {} ", stateToBeUsed);
+
     final List<ConfiguredAirbyteStream> initialSnapshotStreams =
         MongoDbCdcInitialSnapshotUtils.getStreamsForInitialSnapshot(mongoClient, stateManager, catalog, savedOffsetIsValid);
+
+    LOGGER.info("initialSnapshotStreams: {} ", initialSnapshotStreams);
+
     final InitialSnapshotHandler initialSnapshotHandler = new InitialSnapshotHandler();
     final List<AutoCloseableIterator<AirbyteMessage>> initialSnapshotIterators =
         initialSnapshotHandler.getIterators(initialSnapshotStreams, stateManager, mongoClient.getDatabase(databaseName), cdcMetadataInjector,
-            emittedAt, config.getCheckpointInterval());
+            emittedAt, config.getCheckpointInterval(), S3_FILE_PATH, mongoClient);
 
     final AirbyteDebeziumHandler<BsonTimestamp> handler = new AirbyteDebeziumHandler<>(config.rawConfig(),
         new MongoDbCdcTargetPosition(resumeToken), false, firstRecordWaitTime, queueSize);

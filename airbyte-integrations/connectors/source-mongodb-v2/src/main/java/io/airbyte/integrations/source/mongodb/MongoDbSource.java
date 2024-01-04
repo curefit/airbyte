@@ -121,6 +121,18 @@ public class MongoDbSource extends BaseConnector implements Source {
     final var stateManager = MongoDbStateManager.createStateManager(state);
 
     try {
+
+      LOGGER.info("initial config {}", config);
+
+      String S3_FILE_PATH = "";
+
+      if(config.has("snapshot_override_file") && !config.get("snapshot_override_file").isNull()) {
+          S3_FILE_PATH = config.get("snapshot_override_file").asText();
+          LOGGER.info("S3_FILE_PATH {}...", S3_FILE_PATH);
+      } else {
+        LOGGER.info("Key 'snapshot_override_file' not found or has a null value in the configuration.");
+      }
+
       final MongoDbSourceConfig sourceConfig = new MongoDbSourceConfig(config);
 
       // WARNING: do not close the client here since it needs to be used by the iterator
@@ -129,7 +141,7 @@ public class MongoDbSource extends BaseConnector implements Source {
       try {
         final var iteratorList =
             cdcInitializer.createCdcIterators(mongoClient, cdcMetadataInjector, catalog,
-                stateManager, emittedAt, sourceConfig);
+                stateManager, emittedAt, sourceConfig, S3_FILE_PATH);
         return AutoCloseableIterators.concatWithEagerClose(iteratorList, AirbyteTraceMessageUtility::emitStreamStatusTrace);
       } catch (final Exception e) {
         mongoClient.close();
