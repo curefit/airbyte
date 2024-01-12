@@ -9,7 +9,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.mongodb.client.MongoClient;
 import io.airbyte.cdk.integrations.debezium.AirbyteDebeziumHandler;
 import io.airbyte.cdk.integrations.debezium.internals.DebeziumPropertiesManager;
-import io.airbyte.cdk.integrations.debezium.internals.FirstRecordWaitTimeUtil;
+import io.airbyte.cdk.integrations.debezium.internals.RecordWaitTimeUtil;
 import io.airbyte.cdk.integrations.debezium.internals.mongodb.MongoDbCdcTargetPosition;
 import io.airbyte.cdk.integrations.debezium.internals.mongodb.MongoDbDebeziumStateUtil;
 import io.airbyte.cdk.integrations.debezium.internals.mongodb.MongoDbResumeTokenHelper;
@@ -84,7 +84,11 @@ public class MongoDbCdcInitializer {
                                                                         final MongoDbSourceConfig config,
                                                                         String S3_FILE_PATH) {
 
-    final Duration firstRecordWaitTime = FirstRecordWaitTimeUtil.getFirstRecordWaitTime(config.rawConfig());
+//    final Duration firstRecordWaitTime = FirstRecordWaitTimeUtil.getFirstRecordWaitTime(config.rawConfig());
+//    final Duration firstRecordWaitTime = Duration.ofSeconds(3000);
+    final Duration subsequentRecordWaitTime = Duration.ofSeconds(1000);
+    final Duration firstRecordWaitTime = RecordWaitTimeUtil.getFirstRecordWaitTime(config.rawConfig());
+//    final Duration subsequentRecordWaitTime = RecordWaitTimeUtil.getSubsequentRecordWaitTime(config.rawConfig());
     final OptionalInt queueSize = MongoUtil.getDebeziumEventQueueSize(config);
     final String databaseName = config.getDatabaseName();;
     LOGGER.info("S3_FILE_PATH {}...", S3_FILE_PATH);
@@ -142,7 +146,8 @@ public class MongoDbCdcInitializer {
             emittedAt, config.getCheckpointInterval(), S3_FILE_PATH, mongoClient);
 
     final AirbyteDebeziumHandler<BsonTimestamp> handler = new AirbyteDebeziumHandler<>(config.rawConfig(),
-        new MongoDbCdcTargetPosition(resumeToken), false, firstRecordWaitTime, queueSize);
+        new MongoDbCdcTargetPosition(resumeToken), false, firstRecordWaitTime, subsequentRecordWaitTime, OptionalInt.empty());
+
     final MongoDbCdcStateHandler mongoDbCdcStateHandler = new MongoDbCdcStateHandler(stateManager);
     final MongoDbCdcSavedInfoFetcher cdcSavedInfoFetcher = new MongoDbCdcSavedInfoFetcher(stateToBeUsed);
 

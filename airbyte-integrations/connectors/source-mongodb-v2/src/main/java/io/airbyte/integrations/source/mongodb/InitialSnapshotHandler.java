@@ -201,13 +201,17 @@ public class InitialSnapshotHandler {
 
           List<Object> result = getSnapshotOverrideQueryIfExists(collectionName, S3_FILE_PATH) ;
 
-          if((String) result.get(0) != "") {
-              filter = Filters.gte("updatedDate", new Date(System.currentTimeMillis() - ((long) result.get(1) * 24L * 60L * 60L * 1000L)));
+          if(existingState.isPresent()){
+              LOGGER.info("=====existing state====== {}",existingState.get().id());
+              filter = Filters.gte(MongoConstants.ID_FIELD, new ObjectId(existingState.get().id()));
           } else {
-              filter = existingState
-                      .map(state -> Filters.gt(MongoConstants.ID_FIELD, new ObjectId(state.id())))
-                      .orElseGet(BsonDocument::new);
+              if((String) result.get(0) != "") {
+                  filter = Filters.gte("updatedDate", new Date(System.currentTimeMillis() - ((long) result.get(1) * 24L * 60L * 60L * 1000L)));
+              } else {
+                  filter = new BsonDocument();
+              }
           }
+
 
 
           // The filter determines the starting point of this iterator based on the state of this collection.
