@@ -85,20 +85,20 @@ class StreamProcessor(object):
     """
 
     def __init__(
-        self,
-        stream_name: str,
-        destination_type: DestinationType,
-        raw_schema: str,
-        default_schema: str,
-        schema: str,
-        source_sync_mode: SyncMode,
-        destination_sync_mode: DestinationSyncMode,
-        cursor_field: List[str],
-        primary_key: List[List[str]],
-        json_column_name: str,
-        properties: Dict,
-        tables_registry: TableNameRegistry,
-        from_table: Union[str, dbt_macro.Macro],
+            self,
+            stream_name: str,
+            destination_type: DestinationType,
+            raw_schema: str,
+            default_schema: str,
+            schema: str,
+            source_sync_mode: SyncMode,
+            destination_sync_mode: DestinationSyncMode,
+            cursor_field: List[str],
+            primary_key: List[List[str]],
+            json_column_name: str,
+            properties: Dict,
+            tables_registry: TableNameRegistry,
+            from_table: Union[str, dbt_macro.Macro],
     ):
         """
         See StreamProcessor.create()
@@ -131,7 +131,7 @@ class StreamProcessor(object):
 
     @staticmethod
     def create_from_parent(
-        parent, child_name: str, json_column_name: str, properties: Dict, is_nested_array: bool, from_table: str
+            parent, child_name: str, json_column_name: str, properties: Dict, is_nested_array: bool, from_table: str
     ) -> "StreamProcessor":
         """
         @param parent is the Stream Processor that originally created this instance to handle a nested column from that parent table.
@@ -172,19 +172,19 @@ class StreamProcessor(object):
 
     @staticmethod
     def create(
-        stream_name: str,
-        destination_type: DestinationType,
-        raw_schema: str,
-        default_schema: str,
-        schema: str,
-        source_sync_mode: SyncMode,
-        destination_sync_mode: DestinationSyncMode,
-        cursor_field: List[str],
-        primary_key: List[List[str]],
-        json_column_name: str,
-        properties: Dict,
-        tables_registry: TableNameRegistry,
-        from_table: Union[str, dbt_macro.Macro],
+            stream_name: str,
+            destination_type: DestinationType,
+            raw_schema: str,
+            default_schema: str,
+            schema: str,
+            source_sync_mode: SyncMode,
+            destination_sync_mode: DestinationSyncMode,
+            cursor_field: List[str],
+            primary_key: List[List[str]],
+            json_column_name: str,
+            properties: Dict,
+            tables_registry: TableNameRegistry,
+            from_table: Union[str, dbt_macro.Macro],
     ) -> "StreamProcessor":
         """
         @param stream_name of the stream being processed
@@ -294,16 +294,20 @@ class StreamProcessor(object):
                 suffix="stg",
             )
 
-            from_table = self.add_to_outputs(
-                self.generate_scd_type_2_model(from_table, column_names),
-                self.get_model_materialization_mode(is_intermediate=False, column_count=column_count),
-                is_intermediate=False,
-                suffix="scd",
-                subdir="scd",
-                unique_key=self.name_transformer.normalize_column_name(f"{self.airbyte_unique_key}_scd"),
-                partition_by=PartitionScheme.ACTIVE_ROW,
-            )
-            where_clause = f"\nand {self.name_transformer.normalize_column_name('_airbyte_active_row')} = 1"
+            if self.destination_sync_mode == DestinationSyncMode.overwrite:
+                from_table = self.add_to_outputs(
+                    self.generate_scd_type_2_model(from_table, column_names),
+                    self.get_model_materialization_mode(is_intermediate=False, column_count=column_count),
+                    is_intermediate=False,
+                    suffix="scd",
+                    subdir="scd",
+                    unique_key=self.name_transformer.normalize_column_name(f"{self.airbyte_unique_key}_scd"),
+                    partition_by=PartitionScheme.ACTIVE_ROW,
+                )
+                where_clause = f"\nand {self.name_transformer.normalize_column_name('_airbyte_active_row')} = 1"
+            else:
+                a = 1
+                where_clause = f"\nand active_row_rn = 1"
             # from_table should not use the de-duplicated final table or tables downstream (nested streams) will miss non active rows
             self.add_to_outputs(
                 self.generate_final_model(from_table, column_names, unique_key=self.get_unique_key()) + where_clause,
@@ -545,13 +549,13 @@ where 1 = 1
             if is_datetime_without_timezone(definition):
                 sql_type = jinja_call("type_timestamp_without_timezone()")
             else:
-                sql_type = jinja_call("type_timestamp_with_timezone()")
+                sql_type = jinja_call("type_timestamp_without_timezone()")
             return f"cast({replace_operation} as {sql_type})  + interval '330 MINUTES' as {column_name}"
         elif is_date(definition):
             if (
-                self.destination_type.value == DestinationType.MYSQL.value
-                or self.destination_type.value == DestinationType.TIDB.value
-                or self.destination_type.value == DestinationType.DUCKDB.value
+                    self.destination_type.value == DestinationType.MYSQL.value
+                    or self.destination_type.value == DestinationType.TIDB.value
+                    or self.destination_type.value == DestinationType.DUCKDB.value
             ):
                 # MySQL does not support [cast] and [nullif] functions together
                 return self.generate_mysql_date_format_statement(column_name)
@@ -575,9 +579,9 @@ where 1 = 1
                 sql_type = f"'{sql_type}'"
                 return f"nullif(accurateCastOrNull({trimmed_column_name}, {sql_type}), 'null') as {column_name}"
             if (
-                self.destination_type == DestinationType.MYSQL
-                or self.destination_type == DestinationType.TIDB
-                or self.destination_type == DestinationType.DUCKDB
+                    self.destination_type == DestinationType.MYSQL
+                    or self.destination_type == DestinationType.TIDB
+                    or self.destination_type == DestinationType.DUCKDB
             ):
                 return f'nullif(cast({column_name} as {sql_type}), "") as {column_name}'
             replace_operation = jinja_call(f"empty_string_to_null({jinja_column})")
@@ -674,33 +678,98 @@ where 1 = 1
 
     def generate_id_hashing_model(self, from_table: str, column_names: Dict[str, Tuple[str, str]]) -> Any:
 
-        template = Template(
-            """
--- SQL model to build a hash column based on the values of this record
--- depends_on: {{ from_table }}
-select
-    {{ '{{' }} dbt_utils.surrogate_key([
-{%- if parent_hash_id %}
-        {{ parent_hash_id }},
-{%- endif %}
-{%- for field in fields %}
-        {{ field }},
-{%- endfor %}
-    ]) {{ '}}' }} as {{ hash_id }},
-    tmp.*
-from {{ from_table }} tmp
-{{ sql_table_comment }}
-where 1 = 1
-    """
-        )
+        cursor_field = self.get_cursor_field(column_names)
+        order_null = f"is null asc,\n            {cursor_field} desc"
+        cdc_updated_order_pattern = ""
 
-        sql = template.render(
-            parent_hash_id=self.parent_hash_id(in_jinja=True),
-            fields=self.safe_cast_to_strings(column_names),
-            hash_id=self.hash_id(),
-            from_table=jinja_call(from_table),
-            sql_table_comment=self.sql_table_comment(),
-        )
+        if "_ab_cdc_deleted_at" in column_names.keys():
+            col_cdc_deleted_at = self.name_transformer.normalize_column_name("_ab_cdc_deleted_at")
+            col_cdc_updated_at = self.name_transformer.normalize_column_name("_ab_cdc_updated_at")
+            cdc_updated_order_pattern = f"\n            {col_cdc_updated_at} desc,"
+
+        if "_ab_cdc_log_pos" in column_names.keys():
+            col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos")
+            quoted_col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos", in_jinja=True)
+            cdc_updated_order_pattern += f"\n            {col_cdc_log_pos} desc,"
+
+        if "_ab_cdc_lsn" in column_names.keys():
+            col_cdc_lsn = self.name_transformer.normalize_column_name("_ab_cdc_lsn")
+            cdc_updated_order_pattern += f"\n            {col_cdc_lsn} desc,"
+
+        if self.is_incremental_mode(self.destination_sync_mode):
+
+            template = Template(
+                """
+    -- SQL model to build a hash column based on the values of this record
+    -- depends_on: {{ from_table }}
+    select
+        {{ '{{' }} dbt_utils.surrogate_key([
+    {%- if parent_hash_id %}
+            {{ parent_hash_id }},
+    {%- endif %}
+    {%- for field in fields %}
+            {{ field }},
+    {%- endfor %}
+        ]) {{ '}}' }} as {{ hash_id }},
+        tmp.*,
+        row_number() over (
+            partition by {{ primary_key_partition | join(", ") }}
+            order by
+                {{ cursor_field }} {{ order_null }},{{ cdc_updated_at_order }}
+                {{ col_emitted_at }} desc
+          ) as active_row_rn
+    from {{ from_table }} tmp
+    {{ sql_table_comment }}
+    where 1 = 1 and 
+        """
+            )
+
+            sql = template.render(
+                parent_hash_id=self.parent_hash_id(in_jinja=True),
+                fields=self.safe_cast_to_strings(column_names),
+                hash_id=self.hash_id(),
+                from_table=jinja_call(from_table),
+                col_emitted_at=self.get_emitted_at(),
+                order_null=order_null,
+                primary_key_partition=self.get_primary_key_partition(column_names),
+                cursor_field=cursor_field,
+                cdc_updated_at_order=cdc_updated_order_pattern,
+                sql_table_comment=self.sql_table_comment(),
+            )
+        elif self.destination_sync_mode == DestinationSyncMode.overwrite:
+            template = Template(
+                """
+    -- SQL model to build a hash column based on the values of this record
+    -- depends_on: {{ from_table }}
+    select
+        {{ '{{' }} dbt_utils.surrogate_key([
+    {%- if parent_hash_id %}
+            {{ parent_hash_id }},
+    {%- endif %}
+    {%- for field in fields %}
+            {{ field }},
+    {%- endfor %}
+        ]) {{ '}}' }} as {{ hash_id }},
+        tmp.*
+    from {{ from_table }} tmp
+    {{ sql_table_comment }}
+    where 1 = 1
+    and 
+        """
+            )
+
+            sql = template.render(
+                parent_hash_id=self.parent_hash_id(in_jinja=True),
+                fields=self.safe_cast_to_strings(column_names),
+                hash_id=self.hash_id(),
+                from_table=jinja_call(from_table),
+                col_emitted_at=self.get_emitted_at(),
+                order_null=order_null,
+                cursor_field=cursor_field,
+                cdc_updated_at_order=cdc_updated_order_pattern,
+                sql_table_comment=self.sql_table_comment(),
+            )
+
         return sql
 
     def safe_cast_to_strings(self, column_names: Dict[str, Tuple[str, str]]) -> List[str]:
@@ -788,12 +857,12 @@ where 1 = 1
             cdc_active_row_pattern = f" and {col_cdc_deleted_at} is null"
             cdc_updated_order_pattern = f"\n            {col_cdc_updated_at} desc,"
             cdc_cols = (
-                f", {cast_begin}{col_cdc_deleted_at}{cast_as}"
-                + "{{ dbt_utils.type_string() }}"
-                + f"{cast_end}"
-                + f", {cast_begin}{col_cdc_updated_at}{cast_as}"
-                + "{{ dbt_utils.type_string() }}"
-                + f"{cast_end}"
+                    f", {cast_begin}{col_cdc_deleted_at}{cast_as}"
+                    + "{{ dbt_utils.type_string() }}"
+                    + f"{cast_end}"
+                    + f", {cast_begin}{col_cdc_updated_at}{cast_as}"
+                    + "{{ dbt_utils.type_string() }}"
+                    + f"{cast_end}"
             )
             quoted_cdc_cols = f", {quoted_col_cdc_deleted_at}, {quoted_col_cdc_updated_at}"
 
@@ -812,17 +881,17 @@ where 1 = 1
             quoted_cdc_cols += f", {quoted_col_cdc_lsn}"
 
         if (
-            self.destination_type == DestinationType.BIGQUERY
-            and self.get_cursor_field_property_name(column_names) != self.airbyte_emitted_at
-            and is_number(self.properties[self.get_cursor_field_property_name(column_names)]["type"])
+                self.destination_type == DestinationType.BIGQUERY
+                and self.get_cursor_field_property_name(column_names) != self.airbyte_emitted_at
+                and is_number(self.properties[self.get_cursor_field_property_name(column_names)]["type"])
         ):
             # partition by float columns is not allowed in BigQuery, cast it to string
             airbyte_start_at_string = (
-                cast_begin
-                + self.name_transformer.normalize_column_name("_airbyte_start_at")
-                + cast_as
-                + "{{ dbt_utils.type_string() }}"
-                + cast_end
+                    cast_begin
+                    + self.name_transformer.normalize_column_name("_airbyte_start_at")
+                    + cast_as
+                    + "{{ dbt_utils.type_string() }}"
+                    + cast_end
             )
         else:
             airbyte_start_at_string = self.name_transformer.normalize_column_name("_airbyte_start_at")
@@ -1148,14 +1217,14 @@ where 1 = 1
         return [column_names[field][0] for field in column_names]
 
     def add_to_outputs(
-        self,
-        sql: str,
-        materialization_mode: TableMaterializationType,
-        is_intermediate: bool = True,
-        suffix: str = "",
-        unique_key: str = "",
-        subdir: str = "",
-        partition_by: PartitionScheme = PartitionScheme.DEFAULT,
+            self,
+            sql: str,
+            materialization_mode: TableMaterializationType,
+            is_intermediate: bool = True,
+            suffix: str = "",
+            unique_key: str = "",
+            subdir: str = "",
+            partition_by: PartitionScheme = PartitionScheme.DEFAULT,
     ) -> str:
         # Explicit function so that we can have type hints to satisfy the linter
         def wrap_in_quotes(s: str) -> str:
@@ -1164,9 +1233,9 @@ where 1 = 1
         schema = self.get_schema(is_intermediate)
         # MySQL table names need to be manually truncated, because it does not do it automatically
         truncate_name = (
-            self.destination_type == DestinationType.MYSQL
-            or self.destination_type == DestinationType.TIDB
-            or self.destination_type == DestinationType.DUCKDB
+                self.destination_type == DestinationType.MYSQL
+                or self.destination_type == DestinationType.TIDB
+                or self.destination_type == DestinationType.DUCKDB
         )
         table_name = self.tables_registry.get_table_name(schema, self.json_path, self.stream_name, suffix, truncate_name)
         file_name = self.tables_registry.get_file_name(schema, self.json_path, self.stream_name, suffix, truncate_name)
@@ -1290,6 +1359,15 @@ where 1 = 1
             else:
                 # incremental is handled in the SCD SQL already
                 sql = self.add_incremental_clause(sql)
+            # if suffix == "" and not is_intermediate:
+            #     # add post hook to delete data from stg
+            #     print(f"  Adding delete table hook for {stg_table} to {file_name}")
+            #     delete_stg_statement = ""
+            #     if self.destination_type.value == DestinationType.POSTGRES.value:
+            #         delete_stg_statement = f"delete from {stg_schema}.{stg_table} where {self.airbyte_emitted_at} != (select max({self.airbyte_emitted_at}) from {stg_schema}.{stg_table})"
+            #     else:
+            #         delete_stg_statement = f"drop view {stg_schema}.{stg_table}"
+            #     config['hooks'] = Template(""" "{{ delete_stg_statement }}" """).render(delete_stg_statement=delete_stg_statement)
         elif self.destination_sync_mode == DestinationSyncMode.overwrite:
             if suffix == "" and not is_intermediate:
                 # drop SCD table after creating the destination table
@@ -1379,11 +1457,11 @@ where 1 = 1
             # see https://docs.getdbt.com/reference/resource-configs/postgres-configs
             if partition_by == PartitionScheme.ACTIVE_ROW:
                 config["indexes"] = (
-                    "[{'columns':['_airbyte_active_row','"
-                    + self.airbyte_unique_key
-                    + "_scd','"
-                    + self.airbyte_emitted_at
-                    + "'],'type': 'btree'}]"
+                        "[{'columns':['_airbyte_active_row','"
+                        + self.airbyte_unique_key
+                        + "_scd','"
+                        + self.airbyte_emitted_at
+                        + "'],'type': 'btree'}]"
                 )
             elif partition_by == PartitionScheme.UNIQUE_KEY:
                 config["indexes"] = "[{'columns':['" + self.airbyte_unique_key + "'],'unique':True}]"
