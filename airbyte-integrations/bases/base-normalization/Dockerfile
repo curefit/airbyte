@@ -21,6 +21,7 @@ WORKDIR /airbyte/base_python_structs
 RUN pip install "Cython<3.0" "pyyaml==5.4" --no-build-isolation
 
 RUN pip install .
+RUN pip install --upgrade attrs
 
 WORKDIR /airbyte/normalization_code
 RUN pip install .
