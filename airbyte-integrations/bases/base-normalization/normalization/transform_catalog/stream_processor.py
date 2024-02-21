@@ -681,6 +681,13 @@ where 1 = 1
         cursor_field = self.get_cursor_field(column_names)
         order_null = f"is null asc,\n            {cursor_field} desc"
         cdc_updated_order_pattern = ""
+        primary_keys = self.list_primary_keys(column_names)
+
+
+        def hasPrimaryKeys():
+            if len(primary_keys) > 0:
+                return True
+            return False
 
         if "_ab_cdc_deleted_at" in column_names.keys():
             col_cdc_deleted_at = self.name_transformer.normalize_column_name("_ab_cdc_deleted_at")
@@ -697,12 +704,16 @@ where 1 = 1
             cdc_updated_order_pattern += f"\n            {col_cdc_lsn} desc,"
 
         if self.is_incremental_mode(self.destination_sync_mode):
+            un_quoted_primary_keys = self.get_primary_key_partition(column_names)
 
             template = Template(
                 """
     -- SQL model to build a hash column based on the values of this record
     -- depends_on: {{ from_table }}
-    select
+    select    
+        {%- if hasPrimaryKeys %}
+          {{ '{{' }}  dbt_utils.surrogate_key([ {{ primary_keys | join(", ") }} ]) {{ '}}' }} as _airbyte_unique_key,
+    {%- endif %} 
         {{ '{{' }} dbt_utils.surrogate_key([
     {%- if parent_hash_id %}
             {{ parent_hash_id }},
@@ -712,15 +723,17 @@ where 1 = 1
     {%- endfor %}
         ]) {{ '}}' }} as {{ hash_id }},
         tmp.*,
+        {%- if hasPrimaryKeys %}
         row_number() over (
-            partition by {{ primary_key_partition | join(", ") }}
+            partition by {{ un_quoted_primary_keys | join(", ") }}
             order by
                 {{ cursor_field }} {{ order_null }},{{ cdc_updated_at_order }}
                 {{ col_emitted_at }} desc
           ) as active_row_rn
+        {%- endif %} 
     from {{ from_table }} tmp
     {{ sql_table_comment }}
-    where 1 = 1 and 
+    where 1 = 1  
         """
             )
 
@@ -731,17 +744,23 @@ where 1 = 1
                 from_table=jinja_call(from_table),
                 col_emitted_at=self.get_emitted_at(),
                 order_null=order_null,
-                primary_key_partition=self.get_primary_key_partition(column_names),
                 cursor_field=cursor_field,
                 cdc_updated_at_order=cdc_updated_order_pattern,
+                unique_key= self.get_unique_key(),
                 sql_table_comment=self.sql_table_comment(),
+                primary_keys=primary_keys,
+                hasPrimaryKeys=hasPrimaryKeys(),
+                un_quoted_primary_keys=un_quoted_primary_keys
             )
         elif self.destination_sync_mode == DestinationSyncMode.overwrite:
             template = Template(
                 """
     -- SQL model to build a hash column based on the values of this record
     -- depends_on: {{ from_table }}
-    select
+    select    
+        {%- if hasPrimaryKeys %}
+          {{ '{{' }}  dbt_utils.surrogate_key([ {{ primary_keys | join(", ") }} ]) {{ '}}' }} as _airbyte_unique_key,
+    {%- endif %} 
         {{ '{{' }} dbt_utils.surrogate_key([
     {%- if parent_hash_id %}
             {{ parent_hash_id }},
@@ -753,8 +772,7 @@ where 1 = 1
         tmp.*
     from {{ from_table }} tmp
     {{ sql_table_comment }}
-    where 1 = 1
-    and 
+    where 1 = 1     
         """
             )
 
@@ -766,8 +784,10 @@ where 1 = 1
                 col_emitted_at=self.get_emitted_at(),
                 order_null=order_null,
                 cursor_field=cursor_field,
-                cdc_updated_at_order=cdc_updated_order_pattern,
+                unique_key= self.get_unique_key(),
                 sql_table_comment=self.sql_table_comment(),
+                primary_keys=primary_keys,
+                hasPrimaryKeys=hasPrimaryKeys()
             )
 
         return sql
@@ -1359,15 +1379,15 @@ where 1 = 1
             else:
                 # incremental is handled in the SCD SQL already
                 sql = self.add_incremental_clause(sql)
-            # if suffix == "" and not is_intermediate:
-            #     # add post hook to delete data from stg
-            #     print(f"  Adding delete table hook for {stg_table} to {file_name}")
-            #     delete_stg_statement = ""
-            #     if self.destination_type.value == DestinationType.POSTGRES.value:
-            #         delete_stg_statement = f"delete from {stg_schema}.{stg_table} where {self.airbyte_emitted_at} != (select max({self.airbyte_emitted_at}) from {stg_schema}.{stg_table})"
-            #     else:
-            #         delete_stg_statement = f"drop view {stg_schema}.{stg_table}"
-            #     config['hooks'] = Template(""" "{{ delete_stg_statement }}" """).render(delete_stg_statement=delete_stg_statement)
+            if suffix == "" and not is_intermediate:
+                # add post hook to delete data from stg
+                delete_stg_statement = ""
+                hooks = []
+                if self.destination_type.value == DestinationType.POSTGRES.value:
+                    hooks.append(f"delete from {stg_schema}.{stg_table} where {self.airbyte_emitted_at} != (select max({self.airbyte_emitted_at}) from {stg_schema}.{stg_table})")
+                else:
+                    hooks.append(f"drop view {stg_schema}.{stg_table}")
+                config['post_hook'] = "[" + ",".join(map(wrap_in_quotes, hooks)) + "]"
         elif self.destination_sync_mode == DestinationSyncMode.overwrite:
             if suffix == "" and not is_intermediate:
                 # drop SCD table after creating the destination table
