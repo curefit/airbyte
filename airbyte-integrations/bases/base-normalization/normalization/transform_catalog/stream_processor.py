@@ -294,23 +294,22 @@ class StreamProcessor(object):
                 suffix="stg",
             )
 
-            if self.destination_sync_mode == DestinationSyncMode.overwrite:
-                from_table = self.add_to_outputs(
-                    self.generate_scd_type_2_model(from_table, column_names),
-                    self.get_model_materialization_mode(is_intermediate=False, column_count=column_count),
-                    is_intermediate=False,
-                    suffix="scd",
-                    subdir="scd",
-                    unique_key=self.name_transformer.normalize_column_name(f"{self.airbyte_unique_key}_scd"),
-                    partition_by=PartitionScheme.ACTIVE_ROW,
-                )
-                where_clause = f"\nand {self.name_transformer.normalize_column_name('_airbyte_active_row')} = 1"
-            else:
-                a = 1
-                where_clause = f"\nand active_row_rn = 1"
+            # if self.destination_sync_mode == DestinationSyncMode.overwrite:
+            #     from_table = self.add_to_outputs(
+            #         self.generate_scd_type_2_model(from_table, column_names),
+            #         self.get_model_materialization_mode(is_intermediate=False, column_count=column_count),
+            #         is_intermediate=False,
+            #         suffix="scd",
+            #         subdir="scd",
+            #         unique_key=self.name_transformer.normalize_column_name(f"{self.airbyte_unique_key}_scd"),
+            #         partition_by=PartitionScheme.ACTIVE_ROW,
+            #     )
+            #     where_clause = f"\nand {self.name_transformer.normalize_column_name('_airbyte_active_row')} = 1"
+            # else:
+            # where_clause = f"\nand active_row_rn = 1"
             # from_table should not use the de-duplicated final table or tables downstream (nested streams) will miss non active rows
             self.add_to_outputs(
-                self.generate_final_model(from_table, column_names, unique_key=self.get_unique_key()) + where_clause,
+                self.generate_final_model(from_table, column_names, unique_key=self.get_unique_key()),
                 self.get_model_materialization_mode(is_intermediate=False, column_count=column_count),
                 is_intermediate=False,
                 unique_key=self.get_unique_key(),
@@ -680,7 +679,6 @@ where 1 = 1
 
         cursor_field = self.get_cursor_field(column_names)
         order_null = f"is null asc,\n            {cursor_field} desc"
-        cdc_updated_order_pattern = ""
         primary_keys = self.list_primary_keys(column_names)
 
 
@@ -689,22 +687,7 @@ where 1 = 1
                 return True
             return False
 
-        if "_ab_cdc_deleted_at" in column_names.keys():
-            col_cdc_deleted_at = self.name_transformer.normalize_column_name("_ab_cdc_deleted_at")
-            col_cdc_updated_at = self.name_transformer.normalize_column_name("_ab_cdc_updated_at")
-            cdc_updated_order_pattern = f"\n            {col_cdc_updated_at} desc,"
-
-        if "_ab_cdc_log_pos" in column_names.keys():
-            col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos")
-            quoted_col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos", in_jinja=True)
-            cdc_updated_order_pattern += f"\n            {col_cdc_log_pos} desc,"
-
-        if "_ab_cdc_lsn" in column_names.keys():
-            col_cdc_lsn = self.name_transformer.normalize_column_name("_ab_cdc_lsn")
-            cdc_updated_order_pattern += f"\n            {col_cdc_lsn} desc,"
-
         if self.is_incremental_mode(self.destination_sync_mode):
-            un_quoted_primary_keys = self.get_primary_key_partition(column_names)
 
             template = Template(
                 """
@@ -722,15 +705,7 @@ where 1 = 1
             {{ field }},
     {%- endfor %}
         ]) {{ '}}' }} as {{ hash_id }},
-        tmp.*,
-        {%- if hasPrimaryKeys %}
-        row_number() over (
-            partition by {{ un_quoted_primary_keys | join(", ") }}
-            order by
-                {{ cursor_field }} {{ order_null }},{{ cdc_updated_at_order }}
-                {{ col_emitted_at }} desc
-          ) as active_row_rn
-        {%- endif %} 
+        tmp.*        
     from {{ from_table }} tmp
     {{ sql_table_comment }}
     where 1 = 1  
@@ -745,12 +720,10 @@ where 1 = 1
                 col_emitted_at=self.get_emitted_at(),
                 order_null=order_null,
                 cursor_field=cursor_field,
-                cdc_updated_at_order=cdc_updated_order_pattern,
                 unique_key= self.get_unique_key(),
                 sql_table_comment=self.sql_table_comment(),
                 primary_keys=primary_keys,
                 hasPrimaryKeys=hasPrimaryKeys(),
-                un_quoted_primary_keys=un_quoted_primary_keys
             )
         elif self.destination_sync_mode == DestinationSyncMode.overwrite:
             template = Template(
@@ -1176,6 +1149,30 @@ from dedup_data where {{ airbyte_row_num }} = 1
         This is the table that the user actually wants. In addition to the columns that the source outputs, it has some additional metadata columns;
         see the basic normalization docs for an explanation: https://docs.airbyte.com/understanding-airbyte/basic-normalization#normalization-metadata-columns
         """
+        cursor_field = self.get_cursor_field(column_names)
+        order_null = f"is null asc,\n            {cursor_field} desc"
+        cdc_updated_order_pattern = ""
+        primary_keys = self.list_primary_keys(column_names)
+
+        if "_ab_cdc_deleted_at" in column_names.keys():
+            col_cdc_deleted_at = self.name_transformer.normalize_column_name("_ab_cdc_deleted_at")
+            col_cdc_updated_at = self.name_transformer.normalize_column_name("_ab_cdc_updated_at")
+            cdc_updated_order_pattern = f"\n            {col_cdc_updated_at} desc,"
+
+        if "_ab_cdc_log_pos" in column_names.keys():
+            col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos")
+            quoted_col_cdc_log_pos = self.name_transformer.normalize_column_name("_ab_cdc_log_pos", in_jinja=True)
+            cdc_updated_order_pattern += f"\n            {col_cdc_log_pos} desc,"
+
+        if "_ab_cdc_lsn" in column_names.keys():
+            col_cdc_lsn = self.name_transformer.normalize_column_name("_ab_cdc_lsn")
+            cdc_updated_order_pattern += f"\n            {col_cdc_lsn} desc,"
+
+        def hasPrimaryKeys():
+            if len(primary_keys) > 0:
+                return True
+            return False
+
         template = Template(
             """
 -- Final base SQL model
@@ -1194,9 +1191,25 @@ select
     {{ col_emitted_at }},
     {{ '{{ current_timestamp() }}' }} as {{ col_normalized_at }},
     {{ hash_id }}
-from {{ from_table }}
+from {%- if unique_key %}
+    ( select * 
+    {%- if hasPrimaryKeys %}
+        , row_number() over (
+            partition by {{ unique_key }}
+            order by
+                {{ cursor_field }} {{ order_null }},{{ cdc_updated_at_order }}
+                {{ col_emitted_at }} desc
+          ) as row_rank
+        {%- endif %}
+    from {{ from_table }} ) as _stg_tbl
+{% else %}
+{{ from_table }}
+{%- endif %}
 {{ sql_table_comment }}
 where 1 = 1
+{%- if unique_key %}
+and row_rank = 1
+{%- endif %}
     """
         )
         sql = template.render(
@@ -1209,6 +1222,11 @@ where 1 = 1
             from_table=jinja_call(from_table),
             sql_table_comment=self.sql_table_comment(include_from_table=True),
             unique_key=unique_key,
+            order_null=order_null,
+            cursor_field=cursor_field,
+            cdc_updated_at_order=cdc_updated_order_pattern,
+            primary_keys=primary_keys,
+            hasPrimaryKeys=hasPrimaryKeys(),
         )
         return sql
 
@@ -1216,14 +1234,14 @@ where 1 = 1
     def is_incremental_mode(destination_sync_mode: DestinationSyncMode) -> bool:
         return destination_sync_mode.value in [DestinationSyncMode.append.value, DestinationSyncMode.append_dedup.value]
 
-    def add_incremental_clause(self, sql_query: str) -> Any:
+    def add_incremental_clause(self, sql_query: str, table_name: str) -> Any:
         template = Template(
             """
 {{ sql_query }}
 {{ incremental_clause }}
     """
         )
-        sql = template.render(sql_query=sql_query, incremental_clause=self.get_incremental_clause("this"))
+        sql = template.render(sql_query=sql_query, incremental_clause=self.get_incremental_clause(table_name))
         return sql
 
     def get_incremental_clause(self, tablename: str) -> Any:
@@ -1378,7 +1396,21 @@ where 1 = 1
                 config["post_hook"] = "[" + ",".join(map(wrap_in_quotes, hooks)) + "]"
             else:
                 # incremental is handled in the SCD SQL already
-                sql = self.add_incremental_clause(sql)
+                sql = self.add_incremental_clause(sql, "this")
+            #     if suffix == "ab1":
+            #         template = Template(
+            #             """
+            # {{ sql_query }}
+            # and cast({{ col_emitted_at }} as timestamp with time zone) >
+            # (select max(cast({{ col_emitted_at }} as timestamp with time zone)) from {{ tablename }})
+            #     """
+            #         )
+            #         sql = template.render(sql_query=sql,
+            #                               col_emitted_at=self.get_emitted_at(),
+            #                               incremental_clause=self.get_incremental_clause(table_name),
+            #                               tablename=stg_schema+"."+stg_table)
+            #     elif suffix != "ab1" and suffix != "ab2":
+            #         sql = self.add_incremental_clause(sql, "this")
             if suffix == "" and not is_intermediate:
                 # add post hook to delete data from stg
                 delete_stg_statement = ""
