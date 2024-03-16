@@ -681,11 +681,29 @@ where 1 = 1
         order_null = f"is null asc,\n            {cursor_field} desc"
         primary_keys = self.list_primary_keys(column_names)
 
-
         def hasPrimaryKeys():
             if len(primary_keys) > 0:
                 return True
             return False
+
+        def addModuloCol():
+            import re
+
+            extracted_string = re.search(r"'(.*?)'", from_table).group(1)  # Match text within single quotes
+            if extracted_string == "user_segment_ab2" and self.schema == "pk_curefitplatform_segmentation" and self.destination_type == DestinationType.CLICKHOUSE:
+                print(extracted_string)
+                return True
+            return False
+
+        def addCreatedDateCol():
+            import re
+
+            extracted_string = re.search(r"'(.*?)'", from_table).group(1)  # Match text within single quotes
+            if extracted_string == "user_event_ab2" and self.schema == "pk_cfprodplatforms_rashi" and self.destination_type == DestinationType.CLICKHOUSE:
+                print(extracted_string)
+                return True
+            return False
+
 
         if self.is_incremental_mode(self.destination_sync_mode):
 
@@ -706,6 +724,12 @@ where 1 = 1
     {%- endfor %}
         ]) {{ '}}' }} as {{ hash_id }},
         tmp.*        
+    {%- if addModuloCol %}
+        , modulo(segment_id, 500) as segment_id_modulo_500
+    {%- endif %}    
+    {%- if addCreatedDateCol %}
+        , date(createdDate) as createddate_date
+    {%- endif %}    
     from {{ from_table }} tmp
     {{ sql_table_comment }}
     where 1 = 1  
@@ -724,6 +748,8 @@ where 1 = 1
                 sql_table_comment=self.sql_table_comment(),
                 primary_keys=primary_keys,
                 hasPrimaryKeys=hasPrimaryKeys(),
+                addModuloCol=addModuloCol(),
+                addCreatedDateCol=addCreatedDateCol()
             )
         elif self.destination_sync_mode == DestinationSyncMode.overwrite:
             template = Template(
@@ -1173,6 +1199,23 @@ from dedup_data where {{ airbyte_row_num }} = 1
                 return True
             return False
 
+        def isUserSegment():
+            import re
+
+            extracted_string = re.search(r"'(.*?)'", from_table).group(1)  # Match text within single quotes
+            if extracted_string == "user_segment_ab3" and self.schema == "pk_curefitplatform_segmentation" and self.destination_type == DestinationType.CLICKHOUSE:
+                print(extracted_string)
+                return True
+
+        def isUserEvent():
+            import re
+
+            extracted_string = re.search(r"'(.*?)'", from_table).group(1)  # Match text within single quotes
+            if extracted_string == "user_event_ab3" and self.schema == "pk_cfprodplatforms_rashi" and self.destination_type == DestinationType.CLICKHOUSE:
+                print(extracted_string)
+                return True
+            return False
+
         template = Template(
             """
 -- Final base SQL model
@@ -1191,6 +1234,12 @@ select
     {{ col_emitted_at }},
     {{ '{{ current_timestamp() }}' }} as {{ col_normalized_at }},
     {{ hash_id }}
+    {%- if isUserSegment %}
+    , segment_id_modulo_500
+    {%- endif %}    
+    {%- if isUserEvent %}
+    , createddate_date
+    {%- endif %}    
 from {%- if unique_key %}
     ( select * 
     {%- if hasPrimaryKeys %}
@@ -1227,6 +1276,8 @@ and row_rank = 1
             cdc_updated_at_order=cdc_updated_order_pattern,
             primary_keys=primary_keys,
             hasPrimaryKeys=hasPrimaryKeys(),
+            isUserSegment=isUserSegment(),
+            isUserEvent=isUserEvent(),
         )
         return sql
 
@@ -1457,6 +1508,30 @@ and row_rank = 1
 {{ sql }}
     """
         )
+
+        if table_name == "user_segment" and schema == "pk_curefitplatform_segmentation" and self.destination_type == DestinationType.CLICKHOUSE:
+            config = {"unique_key": "['id']", "materialization": "'incremental'",
+                      "engine": "'ReplacingMergeTree'",
+                      "settings": "{'allow_nullable_key': 1}",
+                      "order_by": "['segment_id','user_id','id']",
+                      "schema": "'" + schema + "'",
+                      "incremental_strategy": "'append'"}
+
+        if table_name == "user_attribute" and schema == "pk_cfprodplatforms_rashi" and self.destination_type == DestinationType.CLICKHOUSE:
+            config = {"unique_key": "['_id']", "materialization": "'incremental'",
+                      "engine": "'ReplacingMergeTree'",
+                      "settings": "{'allow_nullable_key': 1}",
+                      "order_by": "['attribute','userId','_id']",
+                      "schema": "'" + schema + "'",
+                      "incremental_strategy": "'append'"}
+
+        if table_name == "user_event" and schema == "pk_cfprodplatforms_rashi" and self.destination_type == DestinationType.CLICKHOUSE:
+            config = {"unique_key": "['_id']", "materialization": "'incremental'",
+                      "engine": "'ReplacingMergeTree'",
+                      "settings": "{'allow_nullable_key': 1}",
+                      "order_by": "['createddate_date', 'name', 'userId','_id']",
+                      "schema": "'" + schema + "'",
+                      "incremental_strategy": "'append'"}
 
         self.sql_outputs[output] = template.render(config=config, sql=sql, tags=self.get_model_tags(is_intermediate))
         json_path = self.current_json_path()

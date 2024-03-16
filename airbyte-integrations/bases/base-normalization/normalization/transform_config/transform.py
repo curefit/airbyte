@@ -325,6 +325,7 @@ class TransformConfig:
             "port": config["port"],
             "schema": config["database"],
             "user": config["username"],
+            "threads": 4
         }
         if "password" in config:
             dbt_config["password"] = config["password"]
